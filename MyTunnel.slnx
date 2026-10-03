@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="MyTunnel.Cli/MyTunnel.Cli.csproj" />
+  <Project Path="MyTunnel.Contracts/MyTunnel.Contracts.csproj" />
   <Project Path="MyTunnel.Gateway/MyTunnel.Gateway.csproj" />
   <Project Path="MyTunnel.LocalServer/MyTunnel.LocalServer.csproj" />
 </Solution>
