@@ -3,4 +3,5 @@
   <Project Path="MyTunnel.Contracts/MyTunnel.Contracts.csproj" />
   <Project Path="MyTunnel.Gateway/MyTunnel.Gateway.csproj" />
   <Project Path="MyTunnel.LocalServer/MyTunnel.LocalServer.csproj" />
+  <Project Path="MyTunnel.Tests/MyTunnel.Tests.csproj" />
 </Solution>
