@@ -5,6 +5,22 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AssemblyName>MyTunnel.Cli</AssemblyName>
+
+    <!-- Distributed as a .NET tool: dotnet tool install -g MyTunnel.Cli -> 'mytunnel' -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>mytunnel</ToolCommandName>
+    <PackageId>MyTunnel.Cli</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Expose a local HTTP application through a public URL via a MyTunnel gateway.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MyTunnel.Contracts\MyTunnel.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.14" />
+  </ItemGroup>
 
 </Project>
