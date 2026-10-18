@@ -1,0 +1,13 @@
+# Local development database only. Usage: docker compose -f docker-compose.dev.yml up -d
+# Then: dotnet user-secrets --project MyTunnel.Gateway set "ConnectionStrings:MyTunnel" "Host=127.0.0.1;Port=5432;Database=mytunnel;Username=mytunnel;Password=mytunnel-dev"
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: mytunnel
+      POSTGRES_USER: mytunnel
+      POSTGRES_PASSWORD: mytunnel-dev   # development only; bound to loopback below
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: [pgdev:/var/lib/postgresql]
+volumes:
+  pgdev:
