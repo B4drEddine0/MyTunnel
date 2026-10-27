@@ -1,0 +1,74 @@
+# Single-VPS production stack: Caddy (TLS, wildcard cert) -> gateway -> PostgreSQL.
+# Usage (from repository root):
+#   cp deploy/.env.example deploy/.env   # then fill in real values
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env build
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm migrate
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+name: mytunnel
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mytunnel
+      POSTGRES_USER: mytunnel
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mytunnel -d mytunnel"]
+      interval: 10s
+      retries: 5
+    networks: [backend]
+    # Not published on the host: only the gateway can reach it.
+
+  migrate:
+    build: { context: .., target: migrations }
+    environment:
+      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+    profiles: [tools]   # only runs on demand: docker compose run --rm migrate
+
+  gateway:
+    build: { context: .., target: runtime }
+    restart: unless-stopped
+    environment:
+      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD}
+      Gateway__PublicDomain: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
+      Gateway__PublicScheme: https
+      Gateway__TrustedNetworks__0: 172.30.0.0/24
+      Database__MigrateOnStartup: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks:
+      backend: {}
+      edge: { ipv4_address: 172.30.0.10 }
+    # Not published on the host: all traffic arrives through Caddy.
+
+  caddy:
+    build: { context: ., dockerfile: caddy.Dockerfile }
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      PUBLIC_DOMAIN: ${PUBLIC_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL}
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?set CLOUDFLARE_API_TOKEN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+
+networks:
+  backend: { internal: true }
+  edge:
+    ipam:
+      config: [{ subnet: 172.30.0.0/24 }]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

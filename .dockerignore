@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/node_modules/
+dashboard/dist/
+MyTunnel.Tests/
+.vs/
+.git/
+**/*.user

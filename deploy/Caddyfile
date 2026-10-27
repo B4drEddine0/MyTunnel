@@ -1,0 +1,38 @@
+# TLS terminates here. The wildcard certificate needs a DNS-01 challenge, so Caddy is built with the
+# Cloudflare DNS plugin (caddy.Dockerfile). For another DNS provider, swap the plugin and the dns line.
+{
+	email {$ACME_EMAIL}
+}
+
+{$PUBLIC_DOMAIN}, *.{$PUBLIC_DOMAIN} {
+	tls {
+		dns cloudflare {$CLOUDFLARE_API_TOKEN}
+	}
+
+	reverse_proxy gateway:8080 {
+		health_uri /ready
+		health_interval 15s
+		# Long-lived tunnel WebSockets and streaming responses.
+		flush_interval -1
+		stream_close_delay 5m
+	}
+
+	# Generous upper bound; the gateway enforces the real per-request limits.
+	request_body {
+		max_size 64MB
+	}
+
+	log {
+		output stdout
+		format json
+		# Never log query strings or headers; they may carry visitors' credentials.
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>tls delete
+			}
+		}
+	}
+}
