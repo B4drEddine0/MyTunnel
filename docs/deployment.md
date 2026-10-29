@@ -1,6 +1,8 @@
 # Deploying MyTunnel
 
-> **Status: not yet verified on a real host.** The Docker images and Compose stack below have **not** been built or run, because Docker isn't available on the development machine. These parts **were** verified locally:
+> **No domain yet?** Test on a single VM first with [`docs/staging.md`](staging.md). It uses sslip.io hostnames and HTTP-01 certificates for fixed names, and leaves this production setup unchanged.
+>
+> **Status: not yet verified on a real host.** CI builds the images, validates the Compose files and Caddyfiles, migrates an empty database and smoke-tests the gateway container. Nothing has run on a real host with DNS and TLS. These parts **were** also verified locally:
 >
 > * The gateway's Release publish.
 > * The EF migration bundle, applied to a brand-new PostgreSQL 18 database. It is idempotent on re-run.

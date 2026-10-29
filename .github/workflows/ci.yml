@@ -138,6 +138,45 @@ jobs:
           fi
           echo "$out" | tail -3
 
+      - name: Validate staging override (merged Compose config and Caddyfile.staging)
+        env:
+          PUBLIC_DOMAIN: 203-0-113-10.sslip.io
+          CLOUDFLARE_API_TOKEN: unused-in-staging
+        run: |
+          STAGING="$COMPOSE -f deploy/docker-compose.staging.yml"
+          $STAGING --profile tools config --quiet
+          $STAGING --profile tools config --format json > staging-config.json
+          python3 - staging-config.json <<'PY'
+          import json, sys
+          services = json.load(open(sys.argv[1]))["services"]
+          networks = json.load(open(sys.argv[1]))["networks"]
+          problems = []
+          for name in ("postgres", "migrate", "gateway"):
+              if services[name].get("ports"):
+                  problems.append(f"{name} publishes ports")
+          caddy_ports = sorted(int(p["target"]) for p in services["caddy"].get("ports", []))
+          if caddy_ports != [80, 443]:
+              problems.append(f"caddy ports are {caddy_ports}, expected [80, 443]")
+          if set(services["postgres"]["networks"]) != {"backend"}:
+              problems.append("postgres must be on the backend network only")
+          if not networks["backend"].get("internal"):
+              problems.append("backend network is not internal")
+          mounts = [v for v in services["caddy"]["volumes"] if v["target"] == "/etc/caddy/Caddyfile"]
+          if len(mounts) != 1 or not mounts[0]["source"].endswith("/deploy/Caddyfile.staging"):
+              problems.append(f"Caddyfile mount is {mounts}, expected only deploy/Caddyfile.staging")
+          if not services["caddy"]["environment"].get("ACME_CA"):
+              problems.append("ACME_CA is not set for caddy")
+          for p in problems:
+              print(f"::error title=staging compose::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+          if ! out=$($STAGING run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then
+            echo "$out"
+            echo "$out" | grep -iE 'error|invalid|unrecognized' | tail -5 | sed 's/^/::error title=caddy validate (staging)::/'
+            exit 1
+          fi
+          echo "$out" | tail -3
+
       - name: Apply migrations to an empty database (twice, to check idempotency)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |

@@ -24,7 +24,7 @@ Expose a local HTTP application through a public URL, without opening inbound po
 | `MyTunnel.LocalServer/` | Sample local app for trying things out |
 | `MyTunnel.Tests/` | Unit, protocol-abuse, end-to-end and PostgreSQL integration tests |
 | `deploy/`, `Dockerfile` | Production stack: Caddy (TLS) → gateway → PostgreSQL |
-| `docs/` | [protocol](docs/protocol.md), [architecture & threat model](docs/architecture.md), [deployment](docs/deployment.md), [release checklist](docs/release-checklist.md) |
+| `docs/` | [protocol](docs/protocol.md), [architecture & threat model](docs/architecture.md), [deployment](docs/deployment.md), [staging without a domain](docs/staging.md), [release checklist](docs/release-checklist.md) |
 
 ## Prerequisites
 

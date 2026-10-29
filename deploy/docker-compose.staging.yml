@@ -1,0 +1,13 @@
+# STAGING ONLY. Layered on top of the production file; it changes nothing but Caddy's certificate setup:
+#   docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.staging.yml --env-file deploy/.env.staging ...
+# PostgreSQL, the gateway, both networks, the volumes and the published ports (80, 443 on Caddy only)
+# all come unchanged from deploy/docker-compose.yml. See docs/staging.md.
+services:
+  caddy:
+    environment:
+      # Let's Encrypt production by default. For dry runs, set ACME_CA in deploy/.env.staging to
+      # https://acme-staging-v02.api.letsencrypt.org/directory (untrusted certificates, much higher limits).
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+    volumes:
+      # Same mount target as the production file, so this entry replaces deploy/Caddyfile.
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro

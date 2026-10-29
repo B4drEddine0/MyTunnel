@@ -10,5 +10,6 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.staging.example
 appsettings.*.local.json
 *.tsbuildinfo

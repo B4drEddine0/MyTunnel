@@ -1,0 +1,39 @@
+# STAGING ONLY. Used through deploy/docker-compose.staging.yml; production uses deploy/Caddyfile.
+#
+# For testing before a domain exists: PUBLIC_DOMAIN is an IP-embedding name such as 203-0-113-10.sslip.io,
+# and only the FIXED hostnames below get certificates, one per name, via the HTTP-01/TLS-ALPN challenge.
+# No DNS provider credentials and no on-demand TLS: a tunnel subdomain not listed here gets no certificate,
+# so run tunnels with `mytunnel http <port> --subdomain demo` (or test). See docs/staging.md.
+{
+	email {$ACME_EMAIL}
+	# Set by the staging compose override; Let's Encrypt production unless ACME_CA points at its staging CA.
+	acme_ca {$ACME_CA}
+}
+
+{$PUBLIC_DOMAIN}, demo.{$PUBLIC_DOMAIN}, test.{$PUBLIC_DOMAIN} {
+	reverse_proxy gateway:8080 {
+		health_uri /ready
+		health_interval 15s
+		# Long-lived tunnel WebSockets and streaming responses.
+		flush_interval -1
+		stream_close_delay 5m
+	}
+
+	# Generous upper bound; the gateway enforces the real per-request limits.
+	request_body {
+		max_size 64MB
+	}
+
+	log {
+		output stdout
+		# JSON lines (via "wrap json"), minus query strings and headers: they may carry visitors' credentials.
+		format filter {
+			wrap json
+			fields {
+				request>uri delete
+				request>headers delete
+				request>tls delete
+			}
+		}
+	}
+}
