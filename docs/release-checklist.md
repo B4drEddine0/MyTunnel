@@ -27,7 +27,7 @@ Status as of 2026-10-29. ✅ = done and verified, ⚠️ = done but not verified
 ## Before the first public deployment
 
 - [ ] Choose a dedicated domain. Create the apex and wildcard DNS records.
-- [ ] Build the images (`docker compose ... --profile tools build`). Nothing has been built on a developer machine yet: Docker is not installed there. The CI `deployment` job builds all three images, validates the Compose file and Caddyfile, migrates an empty database twice and smoke-tests the gateway container. It only counts as evidence once a CI run passes.
+- [x] Build the images (`docker compose ... --profile tools build`). Verified in CI only (run 40852273932, commit 8e03c0c): all three images build, the Compose file and Caddyfile validate, migrations apply to an empty PostgreSQL 18 database and re-run cleanly, and the gateway container answers `/ready`, `/health`, the dashboard, `401` on `/api/me`, and a registration. Not yet built on the target host.
 - [ ] Run `migrate`, start the stack, and complete every step in `docs/deployment.md` §7 from an external network.
 - [ ] Confirm Caddy obtained the wildcard certificate and that WebSocket `wss://<domain>/tunnel` works through Caddy.
 - [ ] Confirm client IPs in tunnelled `X-Forwarded-For` are real visitor IPs (trusted-network setting).
