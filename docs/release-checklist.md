@@ -1,6 +1,6 @@
 # Release checklist
 
-Status as of 2026-10-28. ✅ = done and verified, ⚠️ = done but not verified in the target environment, ❌ = not done.
+Status as of 2026-10-29. ✅ = done and verified, ⚠️ = done but not verified in the target environment, ❌ = not done.
 
 ## Definition of done (from the project brief)
 
@@ -20,14 +20,14 @@ Status as of 2026-10-28. ✅ = done and verified, ⚠️ = done but not verified
 | 13 | Credentials can be revoked | ✅ | Revocation disconnects live tunnels and blocks reconnection (test). |
 | 14 | Migrations and a clean install are documented | ✅ | The migration bundle was applied to an empty PostgreSQL 18 database and re-run idempotently. |
 | 15 | Dashboard talks to the real backend | ✅ | Verified against a live gateway and PostgreSQL. Screenshots were taken in light and dark mode. |
-| 16 | Automated tests pass | ✅ | 167 .NET tests (20 need PostgreSQL) and 9 dashboard tests. |
+| 16 | Automated tests pass | ✅ | 167 .NET tests (21 need PostgreSQL) and 9 dashboard tests, all passing locally on 2026-10-29. `.github/workflows/ci.yml` runs them on every push and pull request to `main`, including the PostgreSQL tests on Linux. It fails if any test is skipped. |
 | 17 | Deployment guide followed and verified | ❌ | Docker was unavailable. No host, domain or DNS exists. |
 | 18 | Known limitations documented | ✅ | `docs/architecture.md` |
 
 ## Before the first public deployment
 
 - [ ] Choose a dedicated domain. Create the apex and wildcard DNS records.
-- [ ] Build the images (`docker compose ... build`). Neither the Dockerfile nor `deploy/` has been built yet.
+- [ ] Build the images (`docker compose ... --profile tools build`). Nothing has been built on a developer machine yet: Docker is not installed there. The CI `deployment` job builds all three images, validates the Compose file and Caddyfile, migrates an empty database twice and smoke-tests the gateway container. It only counts as evidence once a CI run passes.
 - [ ] Run `migrate`, start the stack, and complete every step in `docs/deployment.md` §7 from an external network.
 - [ ] Confirm Caddy obtained the wildcard certificate and that WebSocket `wss://<domain>/tunnel` works through Caddy.
 - [ ] Confirm client IPs in tunnelled `X-Forwarded-For` are real visitor IPs (trusted-network setting).
@@ -43,7 +43,7 @@ Status as of 2026-10-28. ✅ = done and verified, ⚠️ = done but not verified
 - [ ] Load test: tunnels per instance, and throughput per tunnel.
 - [ ] Rotate the Cloudflare token to minimum scope. Keep `deploy/.env` at mode 600 on the host only.
 
-## Dependency and secret hygiene (checked 2026-10-28)
+## Dependency and secret hygiene (checked 2026-10-29, including the full Git history)
 
 - `dotnet list package --vulnerable --include-transitive`: no known vulnerabilities.
 - `npm audit`: 0 vulnerabilities.

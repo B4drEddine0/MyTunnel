@@ -23,12 +23,14 @@ COPY MyTunnel.ControlPlane/ MyTunnel.ControlPlane/
 COPY MyTunnel.Gateway/ MyTunnel.Gateway/
 RUN dotnet publish MyTunnel.Gateway/MyTunnel.Gateway.csproj -c Release -o /app --no-restore
 
-# Self-contained migration executable (no SDK needed where it runs).
+# Self-contained migration executable (no SDK needed where it runs), for the platform being built.
 FROM build AS bundle
+ARG TARGETARCH
 RUN dotnet tool install --global dotnet-ef --version 10.0.14 \
+ && rid="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
  && /root/.dotnet/tools/dotnet-ef migrations bundle \
       --project MyTunnel.ControlPlane --startup-project MyTunnel.Gateway \
-      --self-contained -r linux-x64 -o /efbundle --configuration Release
+      --self-contained -r "$rid" -o /efbundle --configuration Release
 
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS migrations
 COPY --from=bundle /efbundle /efbundle

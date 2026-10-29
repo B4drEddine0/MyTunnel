@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+
+jobs:
+  dotnet-linux:
+    name: .NET build and tests (Linux, with PostgreSQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          # Throwaway database that exists only for the lifetime of this job; not a real credential.
+          POSTGRES_PASSWORD: ci-only-postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Enables the PostgreSQL integration tests; each test creates and drops its own database.
+      MYTUNNEL_TEST_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=ci-only-postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore MyTunnel.slnx
+      - run: dotnet build MyTunnel.slnx -c Release --no-restore
+      - run: dotnet test MyTunnel.slnx -c Release --no-build --logger "trx;LogFileName=results.trx" --results-directory TestResults
+      - name: Fail if any test was skipped
+        # The only skippable tests are the PostgreSQL ones; a skip here means the database was not used.
+        # (TRX leaves notExecuted at 0 for skipped xUnit tests, so compare executed with total.)
+        run: |
+          counters=$(grep -o '<Counters [^>]*>' TestResults/results.trx)
+          total=$(echo "$counters" | grep -o ' total="[0-9]*"' | grep -o '[0-9]*')
+          executed=$(echo "$counters" | grep -o ' executed="[0-9]*"' | grep -o '[0-9]*')
+          echo "Executed ${executed} of ${total} tests"
+          test -n "${total}" && test "${executed}" = "${total}"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-results-linux
+          path: TestResults
+
+  dotnet-windows:
+    name: .NET build and tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      # PostgreSQL tests are reported as skipped here (no service containers on Windows runners);
+      # this job covers the Windows-only code paths such as the DPAPI credential store.
+      - run: dotnet restore MyTunnel.slnx
+      - run: dotnet build MyTunnel.slnx -c Release --no-restore
+      - run: dotnet test MyTunnel.slnx -c Release --no-build
+
+  dashboard:
+    name: Dashboard tests and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npm audit --audit-level=high
+
+  deployment:
+    name: Docker images and Compose stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE: docker compose -f deploy/docker-compose.yml
+      # Placeholder values so Compose can interpolate the file. Nothing here is a real credential,
+      # and Caddy is only validated, never started, so no certificate is requested.
+      PUBLIC_DOMAIN: tunnel.example.com
+      ACME_EMAIL: ops@example.com
+      CLOUDFLARE_API_TOKEN: ci_placeholder_not_a_real_token_00000000
+      POSTGRES_PASSWORD: ci-only-postgres
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate Compose file
+        run: $COMPOSE --profile tools config --quiet
+
+      - name: Build images (gateway, migrations, caddy)
+        run: $COMPOSE --profile tools build
+
+      - name: Validate Caddyfile
+        run: $COMPOSE run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+      - name: Apply migrations to an empty database (twice, to check idempotency)
+        run: |
+          $COMPOSE up -d --wait postgres
+          $COMPOSE --profile tools run --rm migrate
+          $COMPOSE --profile tools run --rm migrate
+
+      - name: Start the gateway and smoke-test it
+        run: |
+          $COMPOSE up -d gateway
+          gateway=http://172.30.0.10:8080   # the gateway's fixed address on the edge network
+          for i in $(seq 1 30); do
+            curl -fsS "$gateway/ready" && break
+            sleep 2
+          done
+          echo
+          curl -fsS "$gateway/ready" | grep -q '"Ready"'
+          curl -fsS "$gateway/health"
+          echo
+          curl -fsS "$gateway/" | grep -qi '<!doctype html'
+          test "$(curl -s -o /dev/null -w '%{http_code}' "$gateway/api/me")" = "401"
+          curl -fsS -X POST "$gateway/api/auth/register" \
+            -H 'Content-Type: application/json' -H 'X-MyTunnel-Csrf: 1' \
+            -d '{"email":"ci@example.com","password":"ci-smoke-password-123"}' -o /dev/null
+          echo "Gateway smoke test passed."
+
+      - name: Show container logs
+        if: failure()
+        run: $COMPOSE --profile tools logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE --profile tools down -v

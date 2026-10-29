@@ -1,7 +1,7 @@
 # Single-VPS production stack: Caddy (TLS, wildcard cert) -> gateway -> PostgreSQL.
 # Usage (from repository root):
 #   cp deploy/.env.example deploy/.env   # then fill in real values
-#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env build
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env --profile tools build
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env run --rm migrate
 #   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 name: mytunnel

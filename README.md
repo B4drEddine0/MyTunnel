@@ -133,3 +133,9 @@ cd dashboard; npm test; npm run build
 ```
 
 If the gateway or CLI is running from Visual Studio, their `.exe` files are locked. Stop them, or build elsewhere with `dotnet test --artifacts-path <dir>`.
+
+Continuous integration (`.github/workflows/ci.yml`) runs on every push and pull request to `main`:
+
+* .NET build and tests on Linux (with a PostgreSQL 18 service, so no test is skipped) and on Windows.
+* Dashboard `npm ci`, tests, production build and `npm audit`.
+* A deployment check: builds the Docker images, validates the Compose file and Caddyfile, migrates an empty database and smoke-tests the gateway container.

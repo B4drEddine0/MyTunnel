@@ -65,7 +65,7 @@ Caddy obtains and renews certificates automatically and stores them in the `cadd
 git clone <repo> mytunnel && cd mytunnel
 cp deploy/.env.example deploy/.env
 chmod 600 deploy/.env
-# edit deploy/.env: PUBLIC_DOMAIN, ACME_EMAIL, CLOUDFLARE_API_TOKEN, POSTGRES_PASSWORD (openssl rand -base64 32)
+# edit deploy/.env: PUBLIC_DOMAIN, ACME_EMAIL, CLOUDFLARE_API_TOKEN, POSTGRES_PASSWORD (openssl rand -hex 32)
 ```
 
 Gateway settings use environment variables (`Gateway__Name`). See the README table for all settings. Production-relevant ones:
@@ -85,7 +85,7 @@ Data Protection keys (which sign session cookies) are stored in PostgreSQL. Sess
 
 ```bash
 C="docker compose -f deploy/docker-compose.yml --env-file deploy/.env"
-$C build
+$C --profile tools build   # include the migrate image (it is in the "tools" profile)
 $C up -d postgres
 $C run --rm migrate          # applies EF Core migrations (idempotent)
 $C up -d gateway caddy
@@ -95,7 +95,7 @@ $C logs -f gateway caddy
 ## 6. Upgrades and rollback
 
 1. Back up the database first (section 8).
-2. Run `git pull`, then `$C build`.
+2. Run `git pull`, then `$C --profile tools build`. Without `--profile tools` the migrations image is not rebuilt, and the next step would apply the previous release's migrations.
 3. Run `$C run --rm migrate`. Migrations are additive. Review each new migration for destructive operations before running it in production.
 4. Run `$C up -d gateway`. Connected CLIs reconnect automatically with backoff and keep their subdomains.
 
