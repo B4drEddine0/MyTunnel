@@ -55,7 +55,19 @@ jobs:
           executed=$(echo "$counters" | grep -o ' executed="[0-9]*"' | grep -o '[0-9]*')
           echo "Executed ${executed} of ${total} tests"
           test -n "${total}" && test "${executed}" = "${total}"
-      - uses: actions/upload-artifact@v4
+      - name: Report failed tests
+        if: failure()
+        # Annotations show up on the run summary and pull request without opening the raw log.
+        run: |
+          python3 - TestResults/results.trx <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          ns = {"t": "http://microsoft.com/schemas/VisualStudio/TeamTest/2010"}
+          for r in ET.parse(sys.argv[1]).getroot().iterfind(".//t:UnitTestResult", ns):
+              if r.get("outcome") == "Failed":
+                  msg = (r.findtext(".//t:Message", "", ns) or "").strip().replace("\r", "").replace("\n", " | ")
+                  print(f"::error title={r.get('testName')[:200]}::{msg[:1500]}")
+          PY
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: test-results-linux
@@ -114,19 +126,30 @@ jobs:
         run: $COMPOSE --profile tools config --quiet
 
       - name: Build images (gateway, migrations, caddy)
+        id: build
         run: $COMPOSE --profile tools build
 
       - name: Validate Caddyfile
-        run: $COMPOSE run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+        run: |
+          if ! out=$($COMPOSE run --rm --no-deps caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1); then
+            echo "$out"
+            echo "$out" | grep -iE 'error|invalid|unrecognized' | tail -5 | sed 's/^/::error title=caddy validate::/'
+            exit 1
+          fi
+          echo "$out" | tail -3
 
       - name: Apply migrations to an empty database (twice, to check idempotency)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
+          trap 'echo "::error title=migrations::failed: $BASH_COMMAND"' ERR
           $COMPOSE up -d --wait postgres
           $COMPOSE --profile tools run --rm migrate
           $COMPOSE --profile tools run --rm migrate
 
       - name: Start the gateway and smoke-test it
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
         run: |
+          trap 'echo "::error title=gateway smoke test::failed: $BASH_COMMAND"' ERR
           $COMPOSE up -d gateway
           gateway=http://172.30.0.10:8080   # the gateway's fixed address on the edge network
           for i in $(seq 1 30); do
@@ -146,7 +169,9 @@ jobs:
 
       - name: Show container logs
         if: failure()
-        run: $COMPOSE --profile tools logs --no-color
+        run: |
+          $COMPOSE --profile tools logs --no-color
+          $COMPOSE --profile tools logs --no-color --tail 200 migrate gateway | grep -iE "fail|error|exception" | tail -8 | sed "s/^/::error title=container log::/" || true
 
       - name: Tear down
         if: always()
