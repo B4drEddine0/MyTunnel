@@ -165,6 +165,12 @@ public sealed class FileCredentialStore(string path) : ICredentialStore
         }
 
         using var stream = new FileStream(path, options);
+        if (!OperatingSystem.IsWindows())
+        {
+            // UnixCreateMode applies only to new files; tighten an existing file before writing the token.
+            File.SetUnixFileMode(stream.SafeFileHandle, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
         stream.Write(Encoding.UTF8.GetBytes(token));
     }
 

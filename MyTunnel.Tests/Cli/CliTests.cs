@@ -162,19 +162,43 @@ public sealed class CliAppTests : IDisposable
     }
 
     [Fact]
-    public async Task Login_stores_token_encrypted_and_logout_removes_it()
+    public async Task Login_stores_token_protected_and_logout_removes_it()
     {
         Assert.Equal(ExitCodes.Success, await RunAsync("login", "--token", "mt_secret_value"));
         var settings = new CliSettings(_configDir);
         Assert.Equal("mt_secret_value", settings.Credentials.Load());
 
-        // The file on disk must not contain the token in plain text.
         var stored = Directory.GetFiles(_configDir).Single();
-        Assert.DoesNotContain("mt_secret_value", File.ReadAllText(stored));
+        if (OperatingSystem.IsWindows())
+        {
+            // DPAPI: the file on disk must not contain the token in plain text.
+            Assert.DoesNotContain("mt_secret_value", File.ReadAllText(stored));
+        }
+        else
+        {
+            // No OS keyring is assumed elsewhere: the file must be readable and writable by its owner only.
+            Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(stored));
+        }
+
         Assert.DoesNotContain("mt_secret_value", _out.ToString());
 
         Assert.Equal(ExitCodes.Success, await RunAsync("logout"));
         Assert.Null(settings.Credentials.Load());
+    }
+
+    [UnixFact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public void File_credential_store_tightens_permissions_of_an_existing_file()
+    {
+        var path = Path.Combine(_configDir, "credentials");
+        Directory.CreateDirectory(_configDir);
+        File.WriteAllText(path, "old");
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead | UnixFileMode.OtherRead);
+
+        new FileCredentialStore(path).Save("mt_secret_value");
+
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
+        Assert.Equal("mt_secret_value", new FileCredentialStore(path).Load());
     }
 
     [Fact]
@@ -185,5 +209,17 @@ public sealed class CliAppTests : IDisposable
         Assert.True(parsed.Has("https"));
         Assert.Equal("demo", parsed.Get("subdomain"));
         Assert.Equal("5", parsed.Get("timeout"));
+    }
+}
+
+/// <summary>For behaviour that only exists on Linux and macOS, such as Unix file modes.</summary>
+public sealed class UnixFactAttribute : FactAttribute
+{
+    public UnixFactAttribute()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            Skip = "Unix-only behaviour; runs in the Linux CI job.";
+        }
     }
 }

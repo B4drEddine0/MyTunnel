@@ -24,8 +24,7 @@
 
 	log {
 		output stdout
-		format json
-		# Never log query strings or headers; they may carry visitors' credentials.
+		# JSON lines (via "wrap json"), minus query strings and headers: they may carry visitors' credentials.
 		format filter {
 			wrap json
 			fields {

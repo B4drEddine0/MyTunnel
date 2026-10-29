@@ -25,8 +25,10 @@ services:
 
   migrate:
     build: { context: .., target: migrations }
+    # GSS Encryption Mode=Disable: password auth over the private network. Npgsql otherwise probes GSSAPI,
+    # and the .NET images ship without libgssapi_krb5, which logs an error on every new connection.
     environment:
-      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable
     depends_on:
       postgres: { condition: service_healthy }
     networks: [backend]
@@ -36,7 +38,7 @@ services:
     build: { context: .., target: runtime }
     restart: unless-stopped
     environment:
-      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__MyTunnel: Host=postgres;Database=mytunnel;Username=mytunnel;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable
       Gateway__PublicDomain: ${PUBLIC_DOMAIN:?set PUBLIC_DOMAIN}
       Gateway__PublicScheme: https
       Gateway__TrustedNetworks__0: 172.30.0.0/24
