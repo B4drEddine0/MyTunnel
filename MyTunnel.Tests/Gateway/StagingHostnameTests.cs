@@ -94,6 +94,14 @@ public sealed class StagingHostnameTests
         Assert.DoesNotContain("CLOUDFLARE", directives);
         Assert.DoesNotContain("*.", directives);
 
+        // Exactly one explicit ACME issuer taken from ACME_CA; no global acme_ca and no ZeroSSL, so Caddy's
+        // default issuers (Let's Encrypt production, ZeroSSL) never apply. CI checks the adapted JSON as well.
+        Assert.Single(Regex.Matches(directives, @"^\s*issuer\s", RegexOptions.Multiline));
+        Assert.Matches(@"(?m)^\s*issuer acme \{\s*$", directives);
+        Assert.Matches(@"(?m)^\s*dir \{\$ACME_CA\}\s*$", directives);
+        Assert.DoesNotContain("acme_ca", directives);
+        Assert.DoesNotContain("zerossl", directives, StringComparison.OrdinalIgnoreCase);
+
         var siteLine = directives.Split('\n').Single(line => line.StartsWith("{$PUBLIC_DOMAIN}"));
         var labels = Regex.Matches(siteLine, @"([a-z0-9-]+)\.\{\$PUBLIC_DOMAIN\}").Select(m => m.Groups[1].Value).ToArray();
         Assert.Equal(["demo", "test"], labels);
@@ -117,6 +125,24 @@ public sealed class StagingHostnameTests
         Assert.Equal(["caddy"], services);
         Assert.DoesNotContain(lines, line => line.Contains("ports"));
         Assert.Contains(lines, line => line.Trim() == "- ./Caddyfile.staging:/etc/caddy/Caddyfile:ro");
+
+        // The CA must be chosen explicitly: required (:?), never defaulted (:-).
+        var acmeCa = Assert.Single(lines, line => line.Trim().StartsWith("ACME_CA:"));
+        Assert.Contains("${ACME_CA:?", acmeCa);
+    }
+
+    [Fact]
+    public void Staging_env_example_starts_on_the_staging_ca_and_has_no_usable_placeholder_email()
+    {
+        var settings = File.ReadAllLines(RepoFile("deploy/.env.staging.example"))
+            .Where(line => !line.TrimStart().StartsWith('#') && line.Contains('='))
+            .Select(line => line.Split('=', 2))
+            .ToDictionary(parts => parts[0].Trim(), parts => parts[1].Trim());
+
+        Assert.Equal("https://acme-staging-v02.api.letsencrypt.org/directory", settings["ACME_CA"]);
+        Assert.StartsWith("REPLACE", settings["ACME_EMAIL"]);
+        Assert.Equal("", settings["POSTGRES_PASSWORD"]);
+        Assert.Equal("unused-in-staging", settings["CLOUDFLARE_API_TOKEN"]);
     }
 
     private static string RepoFile(string relativePath, [CallerFilePath] string thisFile = "") =>

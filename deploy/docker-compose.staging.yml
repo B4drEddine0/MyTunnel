@@ -5,9 +5,9 @@
 services:
   caddy:
     environment:
-      # Let's Encrypt production by default. For dry runs, set ACME_CA in deploy/.env.staging to
-      # https://acme-staging-v02.api.letsencrypt.org/directory (untrusted certificates, much higher limits).
-      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      # Required, with no default, so a certificate authority is never chosen implicitly. deploy/.env.staging.example
+      # starts with Let's Encrypt staging; switch to production only after the checks in docs/staging.md pass.
+      ACME_CA: ${ACME_CA:?set ACME_CA in deploy/.env.staging (Let's Encrypt staging or production directory URL)}
     volumes:
       # Same mount target as the production file, so this entry replaces deploy/Caddyfile.
       - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro

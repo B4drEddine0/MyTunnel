@@ -4,13 +4,18 @@
 # and only the FIXED hostnames below get certificates, one per name, via the HTTP-01/TLS-ALPN challenge.
 # No DNS provider credentials and no on-demand TLS: a tunnel subdomain not listed here gets no certificate,
 # so run tunnels with `mytunnel http <port> --subdomain demo` (or test). See docs/staging.md.
-{
-	email {$ACME_EMAIL}
-	# Set by the staging compose override; Let's Encrypt production unless ACME_CA points at its staging CA.
-	acme_ca {$ACME_CA}
-}
 
 {$PUBLIC_DOMAIN}, demo.{$PUBLIC_DOMAIN}, test.{$PUBLIC_DOMAIN} {
+	# Exactly one, explicit issuer: the ACME directory in ACME_CA (required by deploy/docker-compose.staging.yml).
+	# With an explicit issuer Caddy does not add its default issuers (Let's Encrypt production, ZeroSSL),
+	# so a staging-CA test cannot fall through to a production CA. CI checks the adapted config for this.
+	tls {
+		issuer acme {
+			dir {$ACME_CA}
+			email {$ACME_EMAIL}
+		}
+	}
+
 	reverse_proxy gateway:8080 {
 		health_uri /ready
 		health_interval 15s

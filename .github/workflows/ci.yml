@@ -142,6 +142,7 @@ jobs:
         env:
           PUBLIC_DOMAIN: 203-0-113-10.sslip.io
           CLOUDFLARE_API_TOKEN: unused-in-staging
+          ACME_CA: https://acme-staging-v02.api.letsencrypt.org/directory
         run: |
           STAGING="$COMPOSE -f deploy/docker-compose.staging.yml"
           $STAGING --profile tools config --quiet
@@ -176,6 +177,72 @@ jobs:
             exit 1
           fi
           echo "$out" | tail -3
+
+      - name: Check the staging Caddyfile uses exactly one explicit CA (no implicit defaults, no ZeroSSL)
+        env:
+          PUBLIC_DOMAIN: 203-0-113-10.sslip.io
+          CLOUDFLARE_API_TOKEN: unused-in-staging
+        run: |
+          STAGING="$COMPOSE -f deploy/docker-compose.staging.yml"
+          # The ACME_CA requirement itself: without it, Compose must refuse the configuration.
+          if (unset ACME_CA; $STAGING config --quiet 2>/dev/null); then
+            echo "::error title=staging compose::config accepted without ACME_CA"; exit 1
+          fi
+          check="${RUNNER_TEMP:-/tmp}/check_issuers.py"
+          cat > "$check" <<'PY'
+          # Usage: check_issuers.py <adapted-caddy.json> <expected ACME directory URL> <PUBLIC_DOMAIN>
+          import json, sys
+          path, ca, domain = sys.argv[1:4]
+          names = [domain, f"demo.{domain}", f"test.{domain}"]
+          policies = json.load(open(path)).get("apps", {}).get("tls", {}).get("automation", {}).get("policies", [])
+
+          def matches(subject, name):  # exact name, or a one-label wildcard such as *.example.com
+              if subject.startswith("*."):
+                  return name.count(".") == subject.count(".") and name.endswith(subject[1:])
+              return subject == name
+
+          problems = []
+          if "zerossl" in json.dumps(policies).lower():
+              problems.append("ZeroSSL appears in the TLS automation policies")
+          for name in names:
+              # Caddy uses the first policy whose subjects match; a policy without subjects matches every name.
+              policy = next((p for p in policies if not p.get("subjects") or any(matches(s, name) for s in p["subjects"])), None)
+              issuers = policy.get("issuers", []) if policy else []
+              if len(issuers) != 1 or issuers[0].get("module") != "acme" or issuers[0].get("ca") != ca:
+                  problems.append(f"{name}: issuers {issuers} (an empty list means Caddy's defaults), expected exactly one acme issuer with ca={ca}")
+              else:
+                  print(f"{name}: one acme issuer, ca={ca}")
+          for p in problems:
+              print(f"::error title=staging issuer ({ca})::{p}")
+          sys.exit(1 if problems else 0)
+          PY
+
+          # Self-test: the checker must reject each of these configurations and accept the good one.
+          d="$PUBLIC_DOMAIN"; le=https://acme-staging-v02.api.letsencrypt.org/directory
+          good="{\"module\":\"acme\",\"ca\":\"$le\"}"
+          subjects="[\"$d\",\"demo.$d\",\"test.$d\"]"
+          policies() { printf '{"apps":{"tls":{"automation":{"policies":%s}}}}' "$1" > selftest.json; }
+          expect() {  # expect <accept|reject> <description> <policies JSON>
+            policies "$3"
+            if python3 "$check" selftest.json "$le" "$d" > /dev/null; then result=accept; else result=reject; fi
+            if [ "$result" != "$1" ]; then echo "::error title=issuer checker self-test::$2: expected $1, got $result"; exit 1; fi
+            echo "self-test ok: $1 $2"
+          }
+          expect accept "one explicit issuer for all three names" "[{\"subjects\":$subjects,\"issuers\":[$good]}]"
+          expect reject "ZeroSSL fallback issuer" "[{\"subjects\":$subjects,\"issuers\":[$good,{\"module\":\"acme\",\"ca\":\"https://acme.zerossl.com/v2/DV90\"}]}]"
+          expect reject "an additional issuer" "[{\"subjects\":$subjects,\"issuers\":[$good,{\"module\":\"internal\"}]}]"
+          expect reject "the wrong CA" "[{\"subjects\":$subjects,\"issuers\":[{\"module\":\"acme\",\"ca\":\"https://acme-v02.api.letsencrypt.org/directory\"}]}]"
+          expect reject "no policies (Caddy defaults)" "[]"
+          expect reject "policy without issuers (Caddy defaults)" "[{\"subjects\":$subjects}]"
+          expect reject "test hostname not covered" "[{\"subjects\":[\"$d\",\"demo.$d\"],\"issuers\":[$good]}]"
+          expect reject "earlier catch-all policy with defaults" "[{},{\"subjects\":$subjects,\"issuers\":[$good]}]"
+          expect reject "earlier wildcard policy with another CA" "[{\"subjects\":[\"*.$d\"],\"issuers\":[{\"module\":\"zerossl\"}]},{\"subjects\":$subjects,\"issuers\":[$good]}]"
+
+          # The real check, on the configuration Caddy loads from Caddyfile.staging, for both CA values.
+          for ca in https://acme-staging-v02.api.letsencrypt.org/directory https://acme-v02.api.letsencrypt.org/directory; do
+            ACME_CA="$ca" $STAGING run --rm --no-deps -T caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > adapted.json
+            python3 "$check" adapted.json "$ca" "$PUBLIC_DOMAIN"
+          done
 
       - name: Apply migrations to an empty database (twice, to check idempotency)
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
